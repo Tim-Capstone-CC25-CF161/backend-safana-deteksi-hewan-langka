@@ -1,9 +1,12 @@
-const Hapi = require('@hapi/hapi');
-const routes = require('./routes');
+// src/server.js
+require("dotenv").config();
+const Hapi = require("@hapi/hapi");
+const routes = require("./routes");
+const cookie = require("@hapi/cookie");
 
 const config = {
   port: 9000,
-  host: 'localhost',
+  host: "localhost",
 };
 
 const init = async (c) => {
@@ -13,18 +16,37 @@ const init = async (c) => {
       host: c.host,
       routes: {
         cors: {
-          origin: ['*'],
+          origin: ["*"],
         },
       },
     });
+
+    // Setup plugin cookie
+    await server.register(cookie);
+
+    // Set cookie authentication strategy
+    server.auth.strategy("session", "cookie", {
+        cookie: {
+        password: process.env.SESSION_SECRET, 
+        name: "sid",
+        isHttpOnly: true,
+        isSecure: process.env.NODE_ENV === "production", 
+        ttl: 24 * 60 * 60 * 1000, 
+      },
+      redirectTo: "/login", 
+    });
+
+    server.auth.default("session");
 
     server.route(routes);
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);
+
     return server;
   } catch (error) {
-    console.error('Server gagal dijalankan:', error);
+    console.error("Server gagal dijalankan:", error);
+    console.log("SESSION_SECRET:", process.env.SESSION_SECRET);
   }
 };
 
