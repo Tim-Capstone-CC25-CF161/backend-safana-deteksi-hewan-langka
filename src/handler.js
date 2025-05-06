@@ -1,6 +1,9 @@
 // src/handler.js
 const { pool, createSession, destroySession } = require('./db');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 const getUsersHandler = async (request, h) => {
   try {
@@ -80,7 +83,7 @@ const getArticlesHandler = async (request, h) => {
       );
       return h.response({ message: 'Article created', id: result.insertId }).code(201);
     } catch (error) {
-      console.error('Error creating article:', error);
+      console.error('Error creating article:', error);  
       return h.response({ message: 'Internal Server Error' }).code(500);
     }
   };
@@ -120,14 +123,222 @@ const getArticlesHandler = async (request, h) => {
     }
   };
   
+
+// endpoint untuk table hewandilindungi
+// Get all hewan dilindungi
+const getHewanHandler = async (request, h) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM hewandilindungi');
+    return h.response(rows).code(200);
+  } catch (error) {
+    console.error('Error fetching hewan:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// Get hewan dilindungi by ID
+const getHewanByIdHandler = async (request, h) => {
+  const { id } = request.params;
+  try {
+    const [rows] = await pool.query('SELECT * FROM hewandilindungi WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return h.response({ message: 'Hewan not found' }).code(404);
+    }
+    return h.response(rows[0]).code(200);
+  } catch (error) {
+    console.error('Error fetching hewan by id:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// Create new hewan dilindungi
+const createHewanHandler = async (request, h) => {
+  const { nama, namaLatin, populasi, endangeredStatus } = request.payload;
+  try {
+    await pool.query(
+      'INSERT INTO hewandilindungi (nama, namaLatin, populasi, endangeredStatus) VALUES (?, ?, ?, ?)',
+      [nama, namaLatin, populasi, endangeredStatus]
+    );
+    return h.response({ message: 'Hewan created successfully' }).code(201);
+  } catch (error) {
+    console.error('Error creating hewan:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// Update hewan dilindungi
+const updateHewanHandler = async (request, h) => {
+  const { id } = request.params;
+  const { nama, namaLatin, populasi, endangeredStatus } = request.payload;
+  try {
+    await pool.query(
+      'UPDATE hewandilindungi SET nama = ?, namaLatin = ?, populasi = ?, endangeredStatus = ? WHERE id = ?',
+      [nama, namaLatin, populasi, endangeredStatus, id]
+    );
+    return h.response({ message: 'Hewan updated successfully' }).code(200);
+  } catch (error) {
+    console.error('Error updating hewan:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// Delete hewan dilindungi
+const deleteHewanHandler = async (request, h) => {
+  const { id } = request.params;
+  try {
+    await pool.query('DELETE FROM hewandilindungi WHERE id = ?', [id]);
+    return h.response({ message: 'Hewan deleted successfully' }).code(200);
+  } catch (error) {
+    console.error('Error deleting hewan:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+
+
+
+
+// endpoint untuk table endangeredimage
+const createImageEndangered = async (request, h) => {
+  const { idHewan } = request.payload;
+  const { image } = request.payload;
+
+  if (!image || !image.hapi || !image._data) {
+    return h.response({ message: 'No image file uploaded' }).code(400);
+  }
+
+  try {
+    const filename = `${uuidv4()}_${image.hapi.filename}`;
+    const uploadPath = path.join(__dirname, '../uploads', filename);
+    const fileStream = fs.createWriteStream(uploadPath);
+
+    fileStream.write(image._data);
+    fileStream.end();
+
+    const imageUrl = `/uploads/${filename}`; // relative URL
+
+    await pool.query(
+      'INSERT INTO endangeredimage (idHewan, imageUrl) VALUES (?, ?)',
+      [idHewan, imageUrl]
+    );
+
+    return h.response({ message: 'Image uploaded successfully', imageUrl }).code(201);
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// GET semua gambar
+const getAllImagesEndangered = async (request, h) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM endangeredimage');
+    return h.response(rows).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// GET gambar by ID
+const getImageByIdEndangered = async (request, h) => {
+  const { id } = request.params;
+  try {
+    const [rows] = await pool.query('SELECT * FROM endangeredimage WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return h.response({ message: 'Image not found' }).code(404);
+    }
+    return h.response(rows[0]).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// PUT (update gambar dan/atau idHewan)
+const updateImageEndangered = async (request, h) => {
+  const { id } = request.params;
+  const { idHewan } = request.payload;
+  const file = request.payload.image;
+
+  try {
+    const [rows] = await pool.query('SELECT * FROM endangeredimage WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return h.response({ message: 'Image not found' }).code(404);
+    }
+
+    // Hapus file lama
+    const oldImagePath = path.join(__dirname, '../uploads', path.basename(rows[0].imageUrl));
+    if (fs.existsSync(oldImagePath)) fs.unlinkSync(oldImagePath);
+
+    // Simpan file baru
+    const filename = `${uuidv4()}_${file.hapi.filename}`;
+    const uploadDir = path.join(__dirname, '../uploads');
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+    const filePath = path.join(uploadDir, filename);
+    const fileStream = fs.createWriteStream(filePath);
+
+    await new Promise((resolve, reject) => {
+      file.pipe(fileStream);
+      file.on('end', resolve);
+      file.on('error', reject);
+    });
+
+    const imageUrl = `/uploads/${filename}`;
+    await pool.query('UPDATE endangeredimage SET idHewan = ?, imageUrl = ? WHERE id = ?', [idHewan, imageUrl, id]);
+
+    return h.response({ message: 'Image updated successfully' }).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
+// DELETE gambar
+const deleteImageEndangered = async (request, h) => {
+  const { id } = request.params;
+
+  try {
+    const [rows] = await pool.query('SELECT * FROM endangeredimage WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return h.response({ message: 'Image not found' }).code(404);
+    }
+
+    const imagePath = path.join(__dirname, '../uploads', path.basename(rows[0].imageUrl));
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+
+    await pool.query('DELETE FROM endangeredimage WHERE id = ?', [id]);
+
+    return h.response({ message: 'Image deleted successfully' }).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
+};
+
 module.exports = {
+  //auth
   loginHandler,
   logoutHandler,
   getUsersHandler,
+  //artikel
   getArticlesHandler,
   getArticleByIdHandler,
   createArticleHandler,
   updateArticleHandler,
-  deleteArticleHandler
+  deleteArticleHandler,
+  //hewan dilindungi
+  getHewanHandler,
+  getHewanByIdHandler,
+  createHewanHandler,
+  updateHewanHandler,
+  deleteHewanHandler,
+  //endangered image
+  createImageEndangered,
+  getAllImagesEndangered,
+  getImageByIdEndangered,
+  updateImageEndangered,
+  deleteImageEndangered,
 };
 // module.exports = { loginHandler, logoutHandler, getUsersHandler };

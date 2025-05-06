@@ -3,6 +3,7 @@ require("dotenv").config();
 const Hapi = require("@hapi/hapi");
 const routes = require("./routes");
 const cookie = require("@hapi/cookie");
+const Inert = require('@hapi/inert');
 
 const config = {
   port: 9000,
@@ -20,7 +21,7 @@ const init = async (c) => {
         },
       },
     });
-
+    await server.register(Inert);
     // Setup plugin cookie
     await server.register(cookie);
 
