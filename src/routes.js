@@ -191,7 +191,7 @@ const routes = [
         method: 'GET',
         path: '/endangeredimage',
         handler: getAllImagesEndangered,
-        options: { auth: false }
+        options: { auth: "session" }
       },
       {
         method: 'GET',

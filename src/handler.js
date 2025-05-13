@@ -19,24 +19,50 @@ const getUsersHandler = async (request, h) => {
   }
 };
 
+// const loginHandler = async (request, h) => {
+//   const { username, password } = request.payload;
+
+//   // Query untuk mendapatkan data pengguna berdasarkan username
+//   const [users] = await pool.query('SELECT * FROM admin WHERE username = ?', [username]);
+//   const user = users[0];
+
+// //   if (!user || !(await bcrypt.compare(password, user.password))) {
+// //     return h.response({ message: 'Invalid credentials' }).code(401);
+// //   }
+//   if (!user || password !== user.password) {
+//     return h.response({ message: 'Invalid credentials' }).code(401);
+//   }
+  
+//   const sessionId = await createSession(user.id);
+//   request.cookieAuth.set({ userId: user.id,userName: user.username, sessionId });
+
+//   return h.response({ message: 'Login successful',data: {sid: sessionId, username: user.username,userId: user.id,name: user.name} }).code(200);
+// };
 const loginHandler = async (request, h) => {
   const { username, password } = request.payload;
 
-  // Query untuk mendapatkan data pengguna berdasarkan username
   const [users] = await pool.query('SELECT * FROM admin WHERE username = ?', [username]);
   const user = users[0];
 
-//   if (!user || !(await bcrypt.compare(password, user.password))) {
-//     return h.response({ message: 'Invalid credentials' }).code(401);
-//   }
   if (!user || password !== user.password) {
     return h.response({ message: 'Invalid credentials' }).code(401);
   }
-  
-  const sessionId = await createSession(user.id);
-  request.cookieAuth.set({ userId: user.id, sessionId });
 
-  return h.response({ message: 'Login successful' }).code(200);
+  const sessionId = await createSession(user.id);
+  const { password: _, ...userData } = user; 
+
+  request.cookieAuth.set({
+    ...userData,
+    sessionId
+  });
+
+  return h.response({
+    message: 'Login successful',
+    data: {
+      sid: sessionId,
+      ...userData
+    }
+  }).code(200);
 };
 
 const logoutHandler = (request, h) => {
@@ -230,10 +256,27 @@ const createImageEndangered = async (request, h) => {
 };
 
 // GET semua gambar
+// const getAllImagesEndangered = async (request, h) => {
+//   try {
+//     const [rows] = await pool.query('SELECT * FROM endangeredimage');
+//     return h.response(rows).code(200);
+//   } catch (err) {
+//     console.error(err);
+//     return h.response({ message: 'Internal Server Error' }).code(500);
+//   }
+// };
 const getAllImagesEndangered = async (request, h) => {
   try {
+    const user = request.auth.credentials; 
+
+    console.log("Session user:", user); 
+
     const [rows] = await pool.query('SELECT * FROM endangeredimage');
-    return h.response(rows).code(200);
+    return h.response({
+      message: 'Data fetched successfully',
+      user,
+      data: rows
+    }).code(200);
   } catch (err) {
     console.error(err);
     return h.response({ message: 'Internal Server Error' }).code(500);
@@ -267,11 +310,9 @@ const updateImageEndangered = async (request, h) => {
       return h.response({ message: 'Image not found' }).code(404);
     }
 
-    // Hapus file lama
     const oldImagePath = path.join(__dirname, '../uploads', path.basename(rows[0].imageUrl));
     if (fs.existsSync(oldImagePath)) fs.unlinkSync(oldImagePath);
 
-    // Simpan file baru
     const filename = `${uuidv4()}_${file.hapi.filename}`;
     const uploadDir = path.join(__dirname, '../uploads');
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
