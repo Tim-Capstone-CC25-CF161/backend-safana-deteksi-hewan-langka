@@ -357,6 +357,90 @@ const deleteImageEndangered = async (request, h) => {
     return h.response({ message: 'Internal Server Error' }).code(500);
   }
 };
+  //crud provinsi -----------------------------------------------------------------
+  const createProvinsiHandler = async (request, h) => {
+  const { nama, kode, meta } = request.payload;
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO provinsi (nama, kode, meta) VALUES (?, ?, ?)',
+      [nama, kode, meta]
+    );
+    return h.response({ message: 'Provinsi created', id: result.insertId }).code(201);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Failed to create provinsi' }).code(500);
+  }
+};
+
+const getAllProvinsiHandler = async (request, h) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM provinsi');
+    return h.response(rows).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Failed to fetch provinsi' }).code(500);
+  }
+};
+
+const getProvinsiByIdHandler = async (request, h) => {
+  const { id } = request.params;
+  try {
+    const [rows] = await pool.query('SELECT * FROM provinsi WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return h.response({ message: 'Provinsi not found' }).code(404);
+    }
+    return h.response(rows[0]).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Error fetching provinsi' }).code(500);
+  }
+};
+
+const updateProvinsiHandler = async (request, h) => {
+  const { id } = request.params;
+  const { nama, kode, meta } = request.payload;
+  try {
+    const [result] = await pool.query(
+      'UPDATE provinsi SET nama = ?, kode = ?, meta = ? WHERE id = ?',
+      [nama, kode, meta, id]
+    );
+    if (result.affectedRows === 0) {
+      return h.response({ message: 'Provinsi not found' }).code(404);
+    }
+    return h.response({ message: 'Provinsi updated' }).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Failed to update provinsi' }).code(500);
+  }
+};
+
+const deleteProvinsiHandler = async (request, h) => {
+  const { id } = request.params;
+  try {
+    const [result] = await pool.query('DELETE FROM provinsi WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      return h.response({ message: 'Provinsi not found' }).code(404);
+    }
+    return h.response({ message: 'Provinsi deleted' }).code(200);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Failed to delete provinsi' }).code(500);
+  }
+};
+//BKSDA ---------------------------------------------------------------------------
+const createBksdaHandler = async (request, h) => {
+  const { nama, kode_provinsi, no_wa } = request.payload;
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO bksda (nama, kode_provinsi, no_wa) VALUES (?, ?, ?)',
+      [nama, kode_provinsi, no_wa]
+    );
+    return h.response({ message: 'BKSDA created', id: result.insertId }).code(201);
+  } catch (err) {
+    console.error(err);
+    return h.response({ message: 'Failed to create BKSDA' }).code(500);
+  }
+};
 
 module.exports = {
   //auth
@@ -381,5 +465,13 @@ module.exports = {
   getImageByIdEndangered,
   updateImageEndangered,
   deleteImageEndangered,
+  //provinsi
+  createProvinsiHandler,
+  getAllProvinsiHandler,
+  getProvinsiByIdHandler,
+  updateProvinsiHandler,
+  deleteProvinsiHandler,
+  //BKSDA handler
+  createBksdaHandler
 };
 // module.exports = { loginHandler, logoutHandler, getUsersHandler };
