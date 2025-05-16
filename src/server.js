@@ -40,7 +40,8 @@ const init = async (c) => {
 
     server.auth.default("session");
 
-    server.route(routes,artikelRoutes);
+    server.route([...routes, ...artikelRoutes]);
+
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);
