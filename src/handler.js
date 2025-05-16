@@ -201,7 +201,7 @@ const updateHewanHandler = async (request, h) => {
       'UPDATE hewandilindungi SET nama = ?, namaLatin = ?, populasi = ?, endangeredStatus = ? WHERE id = ?',
       [nama, namaLatin, populasi, endangeredStatus, id]
     );
-    return h.response({ message: 'Hewan updated successfully' }).code(200);
+    return h.response({ message: 'Hewan updated successfully', data:{nama, namaLatin,endangeredStatus,id}}).code(200);
   } catch (error) {
     console.error('Error updating hewan:', error);
     return h.response({ message: 'Internal Server Error' }).code(500);
@@ -429,13 +429,13 @@ const deleteProvinsiHandler = async (request, h) => {
 };
 //BKSDA ---------------------------------------------------------------------------
 const createBksdaHandler = async (request, h) => {
-  const { nama, kode_provinsi, no_wa } = request.payload;
+  const { nama, kode_provinsi, nomor_wa } = request.payload;
   try {
     const [result] = await pool.query(
-      'INSERT INTO bksda (nama, kode_provinsi, no_wa) VALUES (?, ?, ?)',
-      [nama, kode_provinsi, no_wa]
+      'INSERT INTO bksda (nama, kode_provinsi, nomor_wa) VALUES (?, ?, ?)',
+      [nama, kode_provinsi, nomor_wa]
     );
-    return h.response({ message: 'BKSDA created', id: result.insertId }).code(201);
+    return h.response({ message: 'BKSDA created', data:{id: result.insertId, nama, kode_provinsi,nomor_wa} }).code(201);
   } catch (err) {
     console.error(err);
     return h.response({ message: 'Failed to create BKSDA' }).code(500);
@@ -448,11 +448,7 @@ module.exports = {
   logoutHandler,
   getUsersHandler,
   //artikel
-  getArticlesHandler,
-  getArticleByIdHandler,
-  createArticleHandler,
-  updateArticleHandler,
-  deleteArticleHandler,
+  
   //hewan dilindungi
   getHewanHandler,
   getHewanByIdHandler,

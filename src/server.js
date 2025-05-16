@@ -2,6 +2,7 @@
 require("dotenv").config();
 const Hapi = require("@hapi/hapi");
 const routes = require("./routes");
+const artikelRoutes = require("./routes/artikelRoutes");
 const cookie = require("@hapi/cookie");
 const Inert = require('@hapi/inert');
 
@@ -39,7 +40,7 @@ const init = async (c) => {
 
     server.auth.default("session");
 
-    server.route(routes);
+    server.route(routes,artikelRoutes);
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);
