@@ -2,14 +2,7 @@
 const mysql = require('mysql2/promise');  // Import mysql2/promise
 const { v4: uuidv4 } = require('uuid');
 
-// Membuat koneksi pool
-// const pool = mysql.createPool({
-//   host: process.env.DB_HOST || 'defaultdb-desa.k.aivencloud.com',
-//   port: process.env.DB_PORT || 15245,
-//   user: process.env.DB_USER || 'avnadmin',
-//   password: process.env.DB_PASSWORD || 'AVNS_HjowsXYjh-gNxbqpGyx',
-//   database: process.env.DB_NAME || 'defaultdb',
-// });
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
