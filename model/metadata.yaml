@@ -1,0 +1,30 @@
+description: Ultralytics best model trained on /content/CP-1-4/data.yaml
+author: Ultralytics
+date: '2025-05-18T15:40:03.878397'
+version: 8.3.139
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: anoa
+  1: babirusa
+  2: biawak_pohon_biru
+  3: harimau_sumatera
+  4: jalak_bali
+  5: kakatua_jambul_kuning
+  6: kera_hitam
+  7: orangutan
+  8: owa_jawa
+  9: rusa_bawean
+  10: siamang
+args:
+  batch: 1
+  half: false
+  int8: false
+  nms: false
+channels: 3

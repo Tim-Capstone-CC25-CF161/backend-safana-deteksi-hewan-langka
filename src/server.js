@@ -5,6 +5,7 @@ const routes = require("./routes");
 const artikelRoutes = require("./routes/artikelRoutes");
 const cookie = require("@hapi/cookie");
 const Inert = require('@hapi/inert');
+const predictRoutes = require("./routes/predictRoutes");
 
 const config = {
   port: 9000,
