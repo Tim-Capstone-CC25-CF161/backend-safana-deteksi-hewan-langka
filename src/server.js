@@ -2,10 +2,10 @@
 require("dotenv").config();
 const Hapi = require("@hapi/hapi");
 const routes = require("./routes");
-const artikelRoutes = require("./routes/artikelRoutes");
+const artikelRoutes = require("./route/artikelRoutes");
 const cookie = require("@hapi/cookie");
 const Inert = require('@hapi/inert');
-const predictRoutes = require("./routes/predictRoutes");
+const predictRoutes = require("./route/predictRoutes");
 
 const config = {
   port: 9000,
@@ -41,8 +41,7 @@ const init = async (c) => {
 
     server.auth.default("session");
 
-    server.route([...routes, ...artikelRoutes]);
-
+    server.route([...routes, ...artikelRoutes, ...predictRoutes]);
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);
