@@ -18,26 +18,6 @@ const getUsersHandler = async (request, h) => {
     return h.response({ message: 'Internal Server Error' }).code(500);
   }
 };
-
-// const loginHandler = async (request, h) => {
-//   const { username, password } = request.payload;
-
-//   // Query untuk mendapatkan data pengguna berdasarkan username
-//   const [users] = await pool.query('SELECT * FROM admin WHERE username = ?', [username]);
-//   const user = users[0];
-
-// //   if (!user || !(await bcrypt.compare(password, user.password))) {
-// //     return h.response({ message: 'Invalid credentials' }).code(401);
-// //   }
-//   if (!user || password !== user.password) {
-//     return h.response({ message: 'Invalid credentials' }).code(401);
-//   }
-  
-//   const sessionId = await createSession(user.id);
-//   request.cookieAuth.set({ userId: user.id,userName: user.username, sessionId });
-
-//   return h.response({ message: 'Login successful',data: {sid: sessionId, username: user.username,userId: user.id,name: user.name} }).code(200);
-// };
 const loginHandler = async (request, h) => {
   const { username, password } = request.payload;
 
@@ -72,6 +52,36 @@ const logoutHandler = (request, h) => {
   request.cookieAuth.clear();
 
   return h.response({ message: 'Logout successful' }).code(200);
+};
+
+const createAdminHandler = async (request, h) => {
+  const { name, username, password } = request.payload;
+
+  // Validasi sederhana
+  if (!name || !username || !password) {
+    return h.response({ message: 'Name, username, and password are required' }).code(400);
+  }
+
+  try {
+    // Cek apakah username sudah ada
+    const [existing] = await pool.query('SELECT * FROM admin WHERE username = ?', [username]);
+    if (existing.length > 0) {
+      return h.response({ message: 'Username already exists' }).code(409);
+    }
+
+    // Simpan data ke database (opsional: hashing password jika diperlukan)
+    await pool.query('INSERT INTO admin (name, username, password) VALUES (?, ?, ?)', [
+      name, username, password, 
+    ]);
+
+    return h.response({ message: 'User created successfully',data: {
+        name,
+        username
+      } }).code(201);
+  } catch (error) {
+    console.error('Error creating admin:', error);
+    return h.response({ message: 'Internal Server Error' }).code(500);
+  }
 };
 
 const getArticlesHandler = async (request, h) => {
@@ -447,6 +457,7 @@ module.exports = {
   loginHandler,
   logoutHandler,
   getUsersHandler,
+  createAdminHandler,
   //artikel
   
   //hewan dilindungi

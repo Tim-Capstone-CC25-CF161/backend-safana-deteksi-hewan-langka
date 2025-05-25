@@ -1,4 +1,4 @@
-const { getUsersHandler, loginHandler, logoutHandler } = require("./handler");
+const { getUsersHandler, loginHandler, logoutHandler, createAdminHandler } = require("./handler");
 const {
   getHewanHandler,
   getHewanByIdHandler,
@@ -33,6 +33,24 @@ const routes = [
     method: "POST",
     path: "/logout",
     handler: logoutHandler,
+  },
+  {
+    method: "POST",
+    path: "/register",
+    handler: createAdminHandler,
+    options: {
+      auth: false, 
+      validate: {
+        payload: Joi.object({
+          name: Joi.string().required(),
+          username: Joi.string().required(),
+          password: Joi.string().required(),
+        }),
+        failAction: (request, h, err) => {
+          return h.response({ message: err.message }).code(400).takeover();
+        },
+      },
+    },
   },
   {
     method: "GET",
@@ -222,10 +240,10 @@ const routes = [
     method: "POST",
     path: "/bksda",
     handler: createBksdaHandler,
-    options:{
-      auth:"session"
-    }
-  }
+    options: {
+      auth: "session",
+    },
+  },
 ];
 
 module.exports = routes;

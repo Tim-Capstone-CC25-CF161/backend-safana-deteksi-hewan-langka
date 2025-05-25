@@ -39,36 +39,29 @@ function processPredictions(rawPredictions, threshold = 0.25) {
   const boxes = [];
 
   for (const pred of predictions) {
-    const [x, y, w, h, ...classScoresRaw] = pred;
+    // Contoh pred: [x, y, w, h, score0, score1, ..., scoreN]
+    const [x, y, w, h, ...scoresRaw] = pred;
 
-    const classScores = softmax(classScoresRaw);
+    // Jalankan softmax untuk dapat probabilitas kelas yang benar
+    const classScores = softmax(scoresRaw);
 
     const maxClassScore = Math.max(...classScores);
     const classIndex = classScores.indexOf(maxClassScore);
 
-    console.log('Number of classes:', classScores.length);
-    console.log('Chosen class index:', classIndex);
-    console.log('Class label:', classLabels[classIndex]);
-
     if (maxClassScore > threshold) {
-      const className = classLabels[classIndex];
-      if (!className) {
-        console.warn(`Warning: classIndex ${classIndex} tidak ada di classLabels`);
-      }
+      const className = classLabels[classIndex] || `class-${classIndex}`;
+      const xmin = parseFloat((x - w / 2).toFixed(1));
+      const ymin = parseFloat((y - h / 2).toFixed(1));
+      const xmax = parseFloat((x + w / 2).toFixed(1));
+      const ymax = parseFloat((y + h / 2).toFixed(1));
 
       boxes.push({
-        class: className || `class-${classIndex}`,
+        class: className,
         score: parseFloat(maxClassScore.toFixed(3)),
-        bbox: [
-          parseFloat((x - w / 2).toFixed(1)),
-          parseFloat((y - h / 2).toFixed(1)),
-          parseFloat((x + w / 2).toFixed(1)),
-          parseFloat((y + h / 2).toFixed(1))
-        ]
+        bbox: [xmin, ymin, xmax, ymax]
       });
     }
   }
-
   return boxes;
 }
 
@@ -81,6 +74,7 @@ const PredictHandler = async (request, h) => {
       return h.response({ error: "File tidak ditemukan di request" }).code(400);
     }
 
+    // Simpan file sementara
     const tempPath = path.join(os.tmpdir(), uuidv4() + path.extname(file.hapi.filename));
     const fileStream = fs.createWriteStream(tempPath);
 
@@ -90,6 +84,7 @@ const PredictHandler = async (request, h) => {
       file.on("error", reject);
     });
 
+    // Load dan preprocess gambar
     const imageBuffer = fs.readFileSync(tempPath);
     const imageTensor = tf.node
       .decodeImage(imageBuffer, 3)
@@ -97,13 +92,16 @@ const PredictHandler = async (request, h) => {
       .div(255.0)
       .expandDims(0);
 
+    // Load model dan prediksi
     const model = await loadModel();
     const predictions = await model.executeAsync(imageTensor);
+
+    // Konversi prediksi ke array
     const result = Array.isArray(predictions)
-      ? await Promise.all(predictions.map((p) => p.array()))
+      ? await Promise.all(predictions.map(p => p.array()))
       : await predictions.array();
 
-    // Dispose tensors supaya tidak memory leak
+    // Dispose tensor agar tidak memory leak
     if (Array.isArray(predictions)) {
       predictions.forEach(p => p.dispose());
     } else {
@@ -111,8 +109,10 @@ const PredictHandler = async (request, h) => {
     }
     imageTensor.dispose();
 
-    fs.unlinkSync(tempPath); 
+    // Hapus file sementara
+    fs.unlinkSync(tempPath);
 
+    // Proses hasil prediksi dan kembalikan ke client
     const processed = processPredictions(result);
 
     return h.response({

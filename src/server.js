@@ -8,8 +8,8 @@ const Inert = require('@hapi/inert');
 const predictRoutes = require("./route/predictRoutes");
 
 const config = {
-  port: 9000,
-  host: "localhost",
+  port: process.env.PORT || 9000,
+  host: "127.0.0.1",
 };
 
 const init = async (c) => {
