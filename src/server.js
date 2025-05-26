@@ -19,7 +19,7 @@ const init = async (c) => {
       host: c.host,
       routes: {
         cors: {
-          origin: ["https://tim-capstone-cc25-cf161.github.io"],
+          origin: ["https://tim-capstone-cc25-cf161.github.io",'http://localhost:5173',],
           credentials: true,
         },
       },
