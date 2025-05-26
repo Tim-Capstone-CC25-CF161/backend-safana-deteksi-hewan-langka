@@ -4,7 +4,7 @@ const Hapi = require("@hapi/hapi");
 const routes = require("./routes");
 const artikelRoutes = require("./route/artikelRoutes");
 const cookie = require("@hapi/cookie");
-const Inert = require('@hapi/inert');
+const Inert = require("@hapi/inert");
 const predictRoutes = require("./route/predictRoutes");
 
 const config = {
@@ -19,7 +19,8 @@ const init = async (c) => {
       host: c.host,
       routes: {
         cors: {
-          origin: ["*"],
+          origin: ["https://tim-capstone-cc25-cf161.github.io"],
+          credentials: true,
         },
       },
     });
@@ -29,14 +30,14 @@ const init = async (c) => {
 
     // Set cookie authentication strategy
     server.auth.strategy("session", "cookie", {
-        cookie: {
-        password: process.env.SESSION_SECRET, 
+      cookie: {
+        password: process.env.SESSION_SECRET,
         name: "sid",
         isHttpOnly: true,
-        isSecure: process.env.NODE_ENV === "production", 
-        ttl: 24 * 60 * 60 * 1000, 
+        isSecure: process.env.NODE_ENV === "production",
+        ttl: 24 * 60 * 60 * 1000,
       },
-      redirectTo: "/login", 
+      redirectTo: "/login",
     });
 
     server.auth.default("session");
