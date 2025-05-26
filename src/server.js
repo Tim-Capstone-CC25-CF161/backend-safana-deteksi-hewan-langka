@@ -37,7 +37,7 @@ const init = async (c) => {
         isSecure: process.env.NODE_ENV === "production",
         ttl: 24 * 60 * 60 * 1000,
       },
-      redirectTo: "/login",
+      redirectTo: false,
     });
 
     server.auth.default("session");
