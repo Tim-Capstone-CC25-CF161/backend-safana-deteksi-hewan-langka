@@ -35,6 +35,7 @@ const init = async (c) => {
         name: "sid",
         isHttpOnly: true,
         isSecure: process.env.NODE_ENV === "production",
+        sameSite: 'None',
         ttl: 24 * 60 * 60 * 1000,
       },
       redirectTo: false,
