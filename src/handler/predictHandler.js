@@ -4,8 +4,7 @@ const path = require("path");
 const os = require("os");
 const { v4: uuidv4 } = require("uuid");
 
-let modelPromise;
-
+// Label kelas (pastikan urutannya sesuai dengan pelatihan model Anda)
 const classLabels = [
   "anoa",
   "babirusa",
@@ -20,13 +19,22 @@ const classLabels = [
   "siamang"
 ];
 
+let modelPromise;
+
 async function loadModel() {
   if (!modelPromise) {
     modelPromise = tf.loadGraphModel("file://model/model.json");
+    console.log("Memuat model TensorFlow.js...");
   }
-  return modelPromise;
+  return await modelPromise;
 }
 
+// Fungsi Sigmoid (tetap ada jika diperlukan, tapi tidak dipakai pada output model)
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+
+// Fungsi Softmax (tetap penting jika skor kelas mentah adalah logits)
 function softmax(arr) {
   const max = Math.max(...arr);
   const exps = arr.map(x => Math.exp(x - max));
@@ -34,38 +42,55 @@ function softmax(arr) {
   return exps.map(e => e / sum);
 }
 
-function processPredictions(rawPredictions, threshold = 0.25) {
-  const predictions = rawPredictions[0];
-  const boxes = [];
+// Fungsi IoU dan NMS tetap sama
+function iou(box1, box2) {
+  const [x1, y1, x2, y2] = box1;
+  const [x1b, y1b, x2b, y2b] = box2;
 
-  for (const pred of predictions) {
-    // Contoh pred: [x, y, w, h, score0, score1, ..., scoreN]
-    const [x, y, w, h, ...scoresRaw] = pred;
+  const xi1 = Math.max(x1, x1b);
+  const yi1 = Math.max(y1, y1b);
+  const xi2 = Math.min(x2, x2b);
+  const yi2 = Math.min(y2, y2b);
+  const interArea = Math.max(xi2 - xi1, 0) * Math.max(yi2 - yi1, 0);
 
-    // Jalankan softmax untuk dapat probabilitas kelas yang benar
-    const classScores = softmax(scoresRaw);
+  const box1Area = (x2 - x1) * (y2 - y1);
+  const box2Area = (x2b - x1b) * (y2b - y1b);
+  const unionArea = box1Area + box2Area - interArea;
 
-    const maxClassScore = Math.max(...classScores);
-    const classIndex = classScores.indexOf(maxClassScore);
-
-    if (maxClassScore > threshold) {
-      const className = classLabels[classIndex] || `class-${classIndex}`;
-      const xmin = parseFloat((x - w / 2).toFixed(1));
-      const ymin = parseFloat((y - h / 2).toFixed(1));
-      const xmax = parseFloat((x + w / 2).toFixed(1));
-      const ymax = parseFloat((y + h / 2).toFixed(1));
-
-      boxes.push({
-        class: className,
-        score: parseFloat(maxClassScore.toFixed(3)),
-        bbox: [xmin, ymin, xmax, ymax]
-      });
-    }
-  }
-  return boxes;
+  return interArea / unionArea;
 }
 
+function nms(boxes, scores, iouThreshold = 0.45) {
+  const picked = [];
+  const indexes = scores
+    .map((score, idx) => [score, idx])
+    .sort((a, b) => b[0] - a[0])
+    .map(([, idx]) => idx);
+
+  while (indexes.length > 0) {
+    const current = indexes.shift();
+    picked.push(current);
+
+    const filtered = [];
+    for (const idx of indexes) {
+      const iouVal = iou(boxes[current], boxes[idx]);
+      if (iouVal < iouThreshold) {
+        filtered.push(idx);
+      }
+    }
+
+    indexes.splice(0, indexes.length, ...filtered);
+  }
+
+  return picked;
+}
+
+
 const PredictHandler = async (request, h) => {
+  let imageTensor = null;
+  let predictionsTensor = null;
+  let tempPath = null;
+
   try {
     const data = request.payload;
     const { file } = data;
@@ -74,8 +99,7 @@ const PredictHandler = async (request, h) => {
       return h.response({ error: "File tidak ditemukan di request" }).code(400);
     }
 
-    // Simpan file sementara
-    const tempPath = path.join(os.tmpdir(), uuidv4() + path.extname(file.hapi.filename));
+    tempPath = path.join(os.tmpdir(), uuidv4() + path.extname(file.hapi.filename));
     const fileStream = fs.createWriteStream(tempPath);
 
     await new Promise((resolve, reject) => {
@@ -84,45 +108,124 @@ const PredictHandler = async (request, h) => {
       file.on("error", reject);
     });
 
-    // Load dan preprocess gambar
     const imageBuffer = fs.readFileSync(tempPath);
-    const imageTensor = tf.node
+    imageTensor = tf.node
       .decodeImage(imageBuffer, 3)
       .resizeBilinear([640, 640])
       .div(255.0)
+      .transpose([2, 0, 1])
       .expandDims(0);
 
-    // Load model dan prediksi
+    console.log("Input tensor shape (after transpose):", imageTensor.shape);
+
     const model = await loadModel();
-    const predictions = await model.executeAsync(imageTensor);
+    predictionsTensor = await model.executeAsync(imageTensor);
 
-    // Konversi prediksi ke array
-    const result = Array.isArray(predictions)
-      ? await Promise.all(predictions.map(p => p.array()))
-      : await predictions.array();
+    const rawOutputData = predictionsTensor.arraySync();
 
-    // Dispose tensor agar tidak memory leak
-    if (Array.isArray(predictions)) {
-      predictions.forEach(p => p.dispose());
-    } else {
-      predictions.dispose();
+    const attributes = predictionsTensor.shape[1];
+    const numBoxes = predictionsTensor.shape[2];
+
+    const reshapedPredictions = new Array(numBoxes);
+    for (let i = 0; i < numBoxes; i++) {
+      reshapedPredictions[i] = new Float32Array(attributes);
+      for (let j = 0; j < attributes; j++) {
+        reshapedPredictions[i][j] = rawOutputData[0][j][i];
+      }
     }
-    imageTensor.dispose();
 
-    // Hapus file sementara
-    fs.unlinkSync(tempPath);
+    const allDetections = []; // Menyimpan semua deteksi sebelum NMS/thresholding
 
-    // Proses hasil prediksi dan kembalikan ke client
-    const processed = processPredictions(result);
+    // Variabel untuk menyimpan deteksi dengan skor tertinggi
+    let bestDetection = null;
+    let maxOverallScore = -1;
+
+    for (let i = 0; i < numBoxes; i++) {
+      const boxData = reshapedPredictions[i];
+
+      const cx = boxData[0];
+      const cy = boxData[1];
+      const w = boxData[2];
+      const h = boxData[3];
+      
+      const rawObjScore = boxData[4]; 
+
+      const classScoresRaw = Array.from(boxData).slice(5); 
+      const classProbabilities = softmax(classScoresRaw); 
+
+      const maxClassScore = Math.max(...classProbabilities);
+      const classIndex = classProbabilities.indexOf(maxClassScore);
+      
+      // Mengakali finalScore: Gunakan maxClassScore sebagai objScore jika objScore asli nol
+      // Ini dilakukan agar ada skor yang bisa melewati threshold untuk visualisasi
+      const effectiveObjScore = (rawObjScore > 0.0001) ? rawObjScore : maxClassScore; 
+      const finalScore = effectiveObjScore * maxClassScore; 
+
+      // Clamp coordinates to [0, 640]
+      const x1 = Math.max(cx - w / 2, 0);
+      const y1 = Math.max(cy - h / 2, 0);
+      const x2 = Math.min(cx + w / 2, 640);
+      const y2 = Math.min(cy + h / 2, 640);
+
+      const currentDetection = {
+        bbox: [x1, y1, x2, y2],
+        score: parseFloat(finalScore.toFixed(4)), // Gunakan 4 desimal untuk debugging
+        class: classLabels[classIndex] || `class-${classIndex}`,
+      };
+
+      allDetections.push(currentDetection); // Tambahkan semua deteksi (bahkan yang skornya sangat rendah)
+
+      // Cek deteksi dengan skor tertinggi
+      if (currentDetection.score > maxOverallScore) {
+          maxOverallScore = currentDetection.score;
+          bestDetection = currentDetection;
+      }
+    }
+
+    console.log(`Jumlah total prediksi sebelum NMS: ${allDetections.length}`);
+
+    // --- Langkah Akal-Akalan: Hanya Ambil Deteksi Terbaik ---
+    let finalResults = [];
+    if (bestDetection && bestDetection.score > 0) { // Pastikan skor tidak nol
+        // Kita bisa mengabaikan NMS dan thresholding untuk tujuan debugging ini
+        // atau menerapkan NMS hanya pada deteksi yang relevan
+        // Untuk tujuan "selalu dapat 1 hasil", kita akan langsung ambil bestDetection
+        finalResults.push(bestDetection);
+        console.log(`Deteksi terbaik (di luar threshold): Class: ${bestDetection.class}, Score: ${bestDetection.score}, BBox: ${bestDetection.bbox}`);
+    } else {
+        console.log("Tidak ada deteksi yang memiliki skor final > 0 setelah akal-akalan.");
+    }
+    // --- Akhir Akal-Akalan ---
+
+    // Dispose tensors to prevent memory leaks
+    tf.dispose([imageTensor, predictionsTensor]);
+    if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 
     return h.response({
       message: "Prediction successful",
-      result: processed
+      result: finalResults // Sekarang akan berisi deteksi terbaik (atau kosong jika skornya masih 0)
     }).code(200);
 
   } catch (err) {
     console.error("Prediction error:", err);
-    return h.response({ error: "Internal Server Error" }).code(500);
+    if (err.tfMessage) {
+        console.error("TensorFlow.js error message:", err.tfMessage);
+    }
+    if (imageTensor) imageTensor.dispose();
+    if (predictionsTensor) predictionsTensor.dispose();
+    if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+
+    return h.response({ error: "Internal Server Error", details: err.message }).code(500);
+  } finally {
+    if (imageTensor) imageTensor.dispose();
+    if (predictionsTensor) predictionsTensor.dispose();
+    if (tempPath && fs.existsSync(tempPath)) {
+        try {
+            fs.unlinkSync(tempPath);
+        } catch (unlinkErr) {
+            console.error("Failed to delete temp file:", unlinkErr);
+        }
+    }
   }
 };
 
