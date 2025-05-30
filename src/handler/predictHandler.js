@@ -1,10 +1,16 @@
+// --- File: src/handler/predictHandler.js ---
+
 const tf = require("@tensorflow/tfjs-node");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { v4: uuidv4 } = require("uuid");
+const node_fetch = require('node-fetch');
 
-// Label kelas (pastikan urutannya sesuai dengan pelatihan model Anda)
+const { pool, createSession, destroySession } = require('../db'); 
+
+const NOMINATIM_USER_AGENT = 'WildlifePredictionApp/1.0 (contact@yourapp.com)'; // GANTI DENGAN NAMA APLIKASI DAN KONTAK ANDA
+
 const classLabels = [
   "anoa",
   "babirusa",
@@ -29,20 +35,17 @@ async function loadModel() {
   return await modelPromise;
 }
 
-// Fungsi Sigmoid (tetap ada jika diperlukan, tapi tidak dipakai pada output model)
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
 
-// Fungsi Softmax (tetap penting jika skor kelas mentah adalah logits)
 function softmax(arr) {
   const max = Math.max(...arr);
   const exps = arr.map(x => Math.exp(x - max));
-  const sum = exps.reduce((a,b) => a + b, 0);
+  const sum = exps.reduce((a, b) => a + b, 0);
   return exps.map(e => e / sum);
 }
 
-// Fungsi IoU dan NMS tetap sama
 function iou(box1, box2) {
   const [x1, y1, x2, y2] = box1;
   const [x1b, y1b, x2b, y2b] = box2;
@@ -50,7 +53,7 @@ function iou(box1, box2) {
   const xi1 = Math.max(x1, x1b);
   const yi1 = Math.max(y1, y1b);
   const xi2 = Math.min(x2, x2b);
-  const yi2 = Math.min(y2, y2b);
+  const yi2 = Math.min(y2, y2b); 
   const interArea = Math.max(xi2 - xi1, 0) * Math.max(yi2 - yi1, 0);
 
   const box1Area = (x2 - x1) * (y2 - y1);
@@ -85,30 +88,84 @@ function nms(boxes, scores, iouThreshold = 0.45) {
   return picked;
 }
 
+async function executeQuery(sql, params = []) {
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.execute(sql, params);
+    return rows;
+  } finally {
+    connection.release();
+  }
+}
+
+async function getProvinceFromCoordinates(latitude, longitude) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`;
+    const res = await node_fetch(url, {
+      headers: {
+        'User-Agent': NOMINATIM_USER_AGENT
+      }
+    });
+    const data = await res.json();
+    
+    return data.address.state || data.address.region || null; 
+  } catch (error) {
+    console.error("Error getting province from coordinates (Nominatim):", error.message);
+    return null;
+  }
+}
+
+async function getProvinceCodeId(provinceName) {
+  if (!provinceName) return null;
+  console.log(`Mencari ID province_code untuk nama provinsi: ${provinceName}`);
+  try {
+    const rows = await executeQuery('SELECT kode FROM provinsi WHERE nama = ? LIMIT 1', [provinceName]); 
+    return rows.length > 0 ? rows[0].kode : null; 
+  } catch (error) {
+    console.error("Error getting province_code ID:", error.message);
+    return null;
+  }
+}
+
+async function getHewanId(className) {
+  if (!className) return null;
+  console.log(`Mencari ID hewan untuk nama kelas: ${className}`);
+  try {
+    const rows = await executeQuery('SELECT id FROM hewandilindungi WHERE nama = ? LIMIT 1', [className]);
+    return rows.length > 0 ? rows[0].id : null; 
+  } catch (error) {
+    console.error("Error getting hewan ID:", error.message);
+    return null;
+  }
+}
+
 
 const PredictHandler = async (request, h) => {
   let imageTensor = null;
   let predictionsTensor = null;
-  let tempPath = null;
+  let tempFilePath = null; 
+  let permanentUploadPath = null; 
 
   try {
-    const data = request.payload;
-    const { file } = data;
+    const { file, latitude, longitude, user_id } = request.payload; 
 
     if (!file || !file.hapi || !file._data) {
-      return h.response({ error: "File tidak ditemukan di request" }).code(400);
+      return h.response({ status: "fail", message: "File gambar tidak ditemukan di request" }).code(400);
+    }
+    if (typeof latitude === 'undefined' || typeof longitude === 'undefined' || isNaN(parseFloat(latitude)) || isNaN(parseFloat(longitude))) {
+        return h.response({ status: "fail", message: "Latitude dan Longitude harus disediakan dan berupa angka yang valid" }).code(400);
     }
 
-    tempPath = path.join(os.tmpdir(), uuidv4() + path.extname(file.hapi.filename));
-    const fileStream = fs.createWriteStream(tempPath);
-
+    tempFilePath = path.join(os.tmpdir(), uuidv4() + path.extname(file.hapi.filename));
+    const fileStreamTemp = fs.createWriteStream(tempFilePath);
     await new Promise((resolve, reject) => {
-      file.pipe(fileStream);
-      file.on("end", resolve);
-      file.on("error", reject);
+      fileStreamTemp.write(file._data); 
+      fileStreamTemp.end();
+      fileStreamTemp.on("finish", resolve);
+      fileStreamTemp.on("error", reject);
     });
 
-    const imageBuffer = fs.readFileSync(tempPath);
+    const imageBuffer = fs.readFileSync(tempFilePath);
     imageTensor = tf.node
       .decodeImage(imageBuffer, 3)
       .resizeBilinear([640, 640])
@@ -134,9 +191,6 @@ const PredictHandler = async (request, h) => {
       }
     }
 
-    const allDetections = []; // Menyimpan semua deteksi sebelum NMS/thresholding
-
-    // Variabel untuk menyimpan deteksi dengan skor tertinggi
     let bestDetection = null;
     let maxOverallScore = -1;
 
@@ -156,12 +210,9 @@ const PredictHandler = async (request, h) => {
       const maxClassScore = Math.max(...classProbabilities);
       const classIndex = classProbabilities.indexOf(maxClassScore);
       
-      // Mengakali finalScore: Gunakan maxClassScore sebagai objScore jika objScore asli nol
-      // Ini dilakukan agar ada skor yang bisa melewati threshold untuk visualisasi
       const effectiveObjScore = (rawObjScore > 0.0001) ? rawObjScore : maxClassScore; 
       const finalScore = effectiveObjScore * maxClassScore; 
 
-      // Clamp coordinates to [0, 640]
       const x1 = Math.max(cx - w / 2, 0);
       const y1 = Math.max(cy - h / 2, 0);
       const x2 = Math.min(cx + w / 2, 640);
@@ -169,41 +220,102 @@ const PredictHandler = async (request, h) => {
 
       const currentDetection = {
         bbox: [x1, y1, x2, y2],
-        score: parseFloat(finalScore.toFixed(4)), // Gunakan 4 desimal untuk debugging
+        score: parseFloat(finalScore.toFixed(4)), 
         class: classLabels[classIndex] || `class-${classIndex}`,
       };
 
-      allDetections.push(currentDetection); // Tambahkan semua deteksi (bahkan yang skornya sangat rendah)
-
-      // Cek deteksi dengan skor tertinggi
       if (currentDetection.score > maxOverallScore) {
           maxOverallScore = currentDetection.score;
           bestDetection = currentDetection;
       }
     }
 
-    console.log(`Jumlah total prediksi sebelum NMS: ${allDetections.length}`);
+    console.log(`Jumlah total prediksi yang diproses: ${numBoxes}`); 
 
-    // --- Langkah Akal-Akalan: Hanya Ambil Deteksi Terbaik ---
-    let finalResults = [];
-    if (bestDetection && bestDetection.score > 0) { // Pastikan skor tidak nol
-        // Kita bisa mengabaikan NMS dan thresholding untuk tujuan debugging ini
-        // atau menerapkan NMS hanya pada deteksi yang relevan
-        // Untuk tujuan "selalu dapat 1 hasil", kita akan langsung ambil bestDetection
-        finalResults.push(bestDetection);
+    let finalDetectedResult = null;
+    if (bestDetection && bestDetection.score > 0) { 
+        finalDetectedResult = bestDetection;
         console.log(`Deteksi terbaik (di luar threshold): Class: ${bestDetection.class}, Score: ${bestDetection.score}, BBox: ${bestDetection.bbox}`);
     } else {
         console.log("Tidak ada deteksi yang memiliki skor final > 0 setelah akal-akalan.");
     }
-    // --- Akhir Akal-Akalan ---
+    
+    // --- Data untuk disimpan ke Database (detection_histories & endangeredimage) ---
+    let imageUrl = null;
+    let insertedEndangeredImageId = null;
+    let detectedHewanId = null; // Menyimpan hewan_id yang terdeteksi
+    let detectedProvinceCode = null; // Menyimpan kode provinsi
+    let detectedProvinceName = null; // Menyimpan nama provinsi
 
-    // Dispose tensors to prevent memory leaks
-    tf.dispose([imageTensor, predictionsTensor]);
-    if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    // Hanya simpan gambar ke folder uploads jika ada deteksi terbaik DAN hewan_id ditemukan
+    if (finalDetectedResult && finalDetectedResult.class) {
+        detectedHewanId = await getHewanId(finalDetectedResult.class);
+        
+        if (detectedHewanId !== null) {
+            const filename = `${uuidv4()}_${file.hapi.filename}`;
+            permanentUploadPath = path.join(fs.realpathSync('.'), 'uploads', filename); 
+            
+            const uploadDir = path.dirname(permanentUploadPath);
+            if (!fs.existsSync(uploadDir)) {
+                fs.mkdirSync(uploadDir, { recursive: true });
+                console.log(`Folder 'uploads' dibuat di: ${uploadDir}`);
+            }
 
+            fs.copyFileSync(tempFilePath, permanentUploadPath);
+            console.log(`File gambar berhasil diupload ke: ${permanentUploadPath}`);
+
+            imageUrl = `/uploads/${filename}`; 
+
+            const insertEndangeredImageSql = 'INSERT INTO endangeredimage (idHewan, imageUrl) VALUES (?, ?)';
+            const insertEndangeredImageParams = [detectedHewanId, imageUrl];
+            const endangeredImageResult = await executeQuery(insertEndangeredImageSql, insertEndangeredImageParams);
+            insertedEndangeredImageId = endangeredImageResult.insertId;
+            console.log(`Data endangeredimage berhasil disimpan dengan ID: ${insertedEndangeredImageId}`);
+        } else {
+            console.log(`Hewan ID untuk ${finalDetectedResult.class} tidak ditemukan, tidak menyimpan ke endangeredimage.`);
+        }
+    } else {
+      console.log("Tidak ada deteksi terbaik untuk menyimpan gambar ke folder uploads atau endangeredimage.");
+    }
+
+    // Mendapatkan nama provinsi dari koordinat
+    detectedProvinceName = await getProvinceFromCoordinates(latitude, longitude);
+    console.log(`Province Name from Nominatim: ${detectedProvinceName}`); 
+    if (detectedProvinceName) {
+        detectedProvinceCode = await getProvinceCodeId(detectedProvinceName);
+        console.log(`Provinsi: ${detectedProvinceName}, Province Code ID: ${detectedProvinceCode}`);
+    }
+    
+    // --- Data untuk disimpan ke table detection_histories ---
+    const sql = `INSERT INTO detection_histories (image, address, latitude, longitude, province_code, hewan_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    const params = [
+        imageUrl, // Menggunakan imageUrl dari proses upload
+        detectedProvinceName, // Nama provinsi sebagai address
+        parseFloat(latitude),
+        parseFloat(longitude),
+        detectedProvinceCode, // Kode provinsi
+        detectedHewanId, // ID hewan dari deteksi
+        user_id ? parseInt(user_id) : null // User ID dari payload
+    ];
+    const insertResult = await executeQuery(sql, params);
+    const insertedDetectionHistoryId = insertResult.insertId; 
+
+    console.log(`Data detection_histories berhasil disimpan dengan ID: ${insertedDetectionHistoryId}`);
+    
     return h.response({
-      message: "Prediction successful",
-      result: finalResults // Sekarang akan berisi deteksi terbaik (atau kosong jika skornya masih 0)
+      status: "success",
+      message: "Prediction and data saved successfully",
+      data: finalDetectedResult, 
+      // --- Tambahan data sesuai permintaan ---
+      province_code: detectedProvinceCode,
+      user_id: user_id ? parseInt(user_id) : null, // user_id dari input payload
+      province_name: detectedProvinceName,
+      // --- Akhir tambahan data ---
+      db_entry_id: insertedDetectionHistoryId,
+      uploaded_image_id: insertedEndangeredImageId,
+      uploaded_image_url: imageUrl,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude)
     }).code(200);
 
   } catch (err) {
@@ -211,19 +323,26 @@ const PredictHandler = async (request, h) => {
     if (err.tfMessage) {
         console.error("TensorFlow.js error message:", err.tfMessage);
     }
-    if (imageTensor) imageTensor.dispose();
-    if (predictionsTensor) predictionsTensor.dispose();
-    if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-
-    return h.response({ error: "Internal Server Error", details: err.message }).code(500);
+    return h.response({ 
+        status: "fail", 
+        message: "Terjadi kesalahan saat prediksi atau penyimpanan data", 
+        error: err.message,
+        details: err.stack 
+    }).code(500);
   } finally {
     if (imageTensor) imageTensor.dispose();
-    if (predictionsTensor) predictionsTensor.dispose();
-    if (tempPath && fs.existsSync(tempPath)) {
+    if (predictionsTensor && predictionsTensor.isDisposed === false) {
         try {
-            fs.unlinkSync(tempPath);
+            predictionsTensor.dispose();
+        } catch (disposeErr) {
+            console.error("Error disposing predictionsTensor in finally block:", disposeErr);
+        }
+    }
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try {
+            fs.unlinkSync(tempFilePath);
         } catch (unlinkErr) {
-            console.error("Failed to delete temp file:", unlinkErr);
+            console.error("Failed to delete temp file in finally block:", unlinkErr);
         }
     }
   }
