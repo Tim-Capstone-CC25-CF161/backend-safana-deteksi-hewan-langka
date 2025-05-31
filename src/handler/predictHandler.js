@@ -9,7 +9,7 @@ const node_fetch = require('node-fetch');
 
 const { pool, createSession, destroySession } = require('../db'); 
 
-const NOMINATIM_USER_AGENT = 'WildlifePredictionApp/1.0 (contact@yourapp.com)'; // GANTI DENGAN NAMA APLIKASI DAN KONTAK ANDA
+const NOMINATIM_USER_AGENT = 'WildlifePredictionApp/1.0 (contact@yourapp.com)'; 
 
 const classLabels = [
   "anoa",

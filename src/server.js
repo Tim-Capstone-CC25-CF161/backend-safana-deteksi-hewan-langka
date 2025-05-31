@@ -6,6 +6,7 @@ const artikelRoutes = require("./route/artikelRoutes");
 const cookie = require("@hapi/cookie");
 const Inert = require("@hapi/inert");
 const predictRoutes = require("./route/predictRoutes");
+const similiarRoutes = require('./route/similiarRoutes');
 
 const config = {
   port: process.env.PORT || 9000,
@@ -43,7 +44,7 @@ const init = async (c) => {
 
     server.auth.default("session");
 
-    server.route([...routes, ...artikelRoutes, ...predictRoutes]);
+    server.route([...routes, ...artikelRoutes, ...predictRoutes, ...similiarRoutes]);
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);

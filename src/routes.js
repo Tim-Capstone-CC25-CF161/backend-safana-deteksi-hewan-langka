@@ -173,6 +173,20 @@ const routes = [
   },
   {
     method: "GET",
+    path: "/uploads/hewanserupa/{filename}",
+    handler: {
+      directory: {
+        path: path.join(__dirname, "../uploads/hewanserupa"),
+        listing: false,
+        index: false,
+      },
+    },
+    options: {
+      auth: false,
+    },
+  },
+  {
+    method: "GET",
     path: "/endangeredimage",
     handler: getAllImagesEndangered,
     options: { auth: "session" },
