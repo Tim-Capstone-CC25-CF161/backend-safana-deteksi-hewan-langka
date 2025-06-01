@@ -1,0 +1,75 @@
+// src/handler/galeriHandler.js
+
+const { pool } = require('../db'); 
+
+
+const getGaleriHandler = async (request, h) => {
+    try {
+        
+        const page = parseInt(request.query.page) || 1; 
+        const per_page = parseInt(request.query.per_page) || 5; 
+        const offset = (page - 1) * per_page;
+        const search_name = request.query.search_name || ''
+
+        let whereClause = '';
+        let queryParams = [];
+
+        if (search_name) {
+            whereClause = `WHERE hd.nama LIKE ?`; 
+            queryParams.push(`%${search_name}%`); 
+        }
+
+        const [countRows] = await pool.query(`
+            SELECT COUNT(*) AS total
+            FROM detection_histories dh
+            JOIN hewandilindungi hd ON dh.hewan_id = hd.id
+            JOIN provinsi p ON dh.province_code = p.kode
+            ${whereClause}
+        `, queryParams);
+        const total_data = countRows[0].total;
+        const total_pages = Math.ceil(total_data / per_page);
+
+        const [dataRows] = await pool.query(`
+            SELECT 
+                dh.*, hd.*,hd.nama AS nama_hewan, p.*
+            FROM detection_histories dh
+            JOIN hewandilindungi hd ON dh.hewan_id = hd.id
+            JOIN provinsi p ON dh.province_code = p.kode
+            ${whereClause}
+            ORDER BY dh.created_at DESC 
+            LIMIT ? OFFSET ?
+        `, [...queryParams, per_page, offset]); // Gabungkan queryParams search dengan pagination params
+
+        // Format data agar latitude dan longitude menjadi angka
+        const formattedData = dataRows.map(row => ({
+            ...row,
+            latitude: parseFloat(row.latitude),
+            longitude: parseFloat(row.longitude)
+        }));
+
+        // --- 3. Kembalikan response dalam format yang diinginkan ---
+        return h.response({
+            status: 'success',
+            message: 'Get data successfully',
+            data: {
+                data: formattedData,
+                page: page,
+                total_pages: total_pages,
+                total_data: total_data,
+                per_page: per_page
+            }
+        }).code(200);
+
+    } catch (error) {
+        console.error('Error fetching gallery data:', error); // Ubah pesan error log
+        return h.response({
+            status: 'error',
+            message: 'Internal Server Error',
+            details: error.message
+        }).code(500);
+    }
+};
+
+module.exports = {
+    getGaleriHandler
+};

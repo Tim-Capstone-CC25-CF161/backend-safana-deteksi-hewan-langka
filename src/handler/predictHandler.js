@@ -8,6 +8,7 @@ const { v4: uuidv4 } = require("uuid");
 const node_fetch = require('node-fetch');
 
 const { pool, createSession, destroySession } = require('../db'); 
+const { create } = require("domain");
 
 const NOMINATIM_USER_AGENT = 'WildlifePredictionApp/1.0 (contact@yourapp.com)'; 
 
@@ -287,7 +288,7 @@ const PredictHandler = async (request, h) => {
     }
     
     // --- Data untuk disimpan ke table detection_histories ---
-    const sql = `INSERT INTO detection_histories (image, address, latitude, longitude, province_code, hewan_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    const sql = `INSERT INTO detection_histories (image, address, latitude, longitude, province_code, hewan_id, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`;
     const params = [
         imageUrl, // Menggunakan imageUrl dari proses upload
         detectedProvinceName, // Nama provinsi sebagai address
@@ -295,7 +296,8 @@ const PredictHandler = async (request, h) => {
         parseFloat(longitude),
         detectedProvinceCode, // Kode provinsi
         detectedHewanId, // ID hewan dari deteksi
-        user_id ? parseInt(user_id) : null // User ID dari payload
+        user_id ? parseInt(user_id) : null,
+        new Date().toISOString().substr(0, 19).replace('T', ' ')
     ];
     const insertResult = await executeQuery(sql, params);
     const insertedDetectionHistoryId = insertResult.insertId; 
@@ -308,6 +310,7 @@ const PredictHandler = async (request, h) => {
       data: finalDetectedResult, 
       // --- Tambahan data sesuai permintaan ---
       province_code: detectedProvinceCode,
+      hewan_id: detectedHewanId,
       user_id: user_id ? parseInt(user_id) : null, // user_id dari input payload
       province_name: detectedProvinceName,
       // --- Akhir tambahan data ---
@@ -315,7 +318,8 @@ const PredictHandler = async (request, h) => {
       uploaded_image_id: insertedEndangeredImageId,
       uploaded_image_url: imageUrl,
       latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude)
+      longitude: parseFloat(longitude),
+      created_at: new Date().toISOString().substr(0, 19).replace('T', ' ')
     }).code(200);
 
   } catch (err) {
