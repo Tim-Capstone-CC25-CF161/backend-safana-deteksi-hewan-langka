@@ -1,4 +1,4 @@
-const { getUsersHandler, loginHandler, logoutHandler, createAdminHandler } = require("./handler");
+// const { getUsersHandler, loginHandler, logoutHandler, createAdminHandler } = require("./handler");
 const {
   getHewanHandler,
   getHewanByIdHandler,
@@ -23,35 +23,35 @@ const Joi = require("joi");
 const path = require("path");
 const { hewanSchema } = require("../schemas/hewanSchema.js");
 const routes = [
-  {
-    method: "POST",
-    path: "/login",
-    options: { auth: false }, // Nonaktifkan autentikasi untuk login, session untuk aktif
-    handler: loginHandler,
-  },
-  {
-    method: "POST",
-    path: "/logout",
-    handler: logoutHandler,
-  },
-  {
-    method: "POST",
-    path: "/register",
-    handler: createAdminHandler,
-    options: {
-      auth: false, 
-      validate: {
-        payload: Joi.object({
-          name: Joi.string().required(),
-          username: Joi.string().required(),
-          password: Joi.string().required(),
-        }),
-        failAction: (request, h, err) => {
-          return h.response({ message: err.message }).code(400).takeover();
-        },
-      },
-    },
-  },
+  // {
+  //   method: "POST",
+  //   path: "/login",
+  //   options: { auth: false }, // Nonaktifkan autentikasi untuk login, session untuk aktif
+  //   handler: loginHandler,
+  // },
+  // {
+  //   method: "POST",
+  //   path: "/logout",
+  //   handler: logoutHandler,
+  // },
+  // {
+  //   method: "POST",
+  //   path: "/register",
+  //   handler: createAdminHandler,
+  //   options: {
+  //     auth: false, 
+  //     validate: {
+  //       payload: Joi.object({
+  //         name: Joi.string().required(),
+  //         username: Joi.string().required(),
+  //         password: Joi.string().required(),
+  //       }),
+  //       failAction: (request, h, err) => {
+  //         return h.response({ message: err.message }).code(400).takeover();
+  //       },
+  //     },
+  //   },
+  // },
   {
     method: "GET",
     path: "/",
@@ -62,14 +62,14 @@ const routes = [
       return "Hello World!";
     },
   },
-  {
-    method: "GET",
-    path: "/users",
-    options: {
-      auth: false,
-    },
-    handler: getUsersHandler,
-  },
+  // {
+  //   method: "GET",
+  //   path: "/users",
+  //   options: {
+  //     auth: false,
+  //   },
+  //   handler: getUsersHandler,
+  // },
   // Hewan Dilindungi
   {
     method: "GET",

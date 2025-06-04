@@ -10,6 +10,7 @@ const similiarRoutes = require('./route/similiarRoutes');
 const mapsRoutes = require('./route/mapsRoutes');
 const galeriRoutes = require("./route/galeriRoutes");
 const bksdaRoutes = require("./route/bksdaRoutes");
+const authRoutes = require("./route/authRoutes");
 
 const config = {
   port: process.env.PORT || 9000,
@@ -47,7 +48,7 @@ const init = async (c) => {
 
     server.auth.default("session");
 
-    server.route([...routes, ...artikelRoutes, ...predictRoutes, ...similiarRoutes,...mapsRoutes,...galeriRoutes, ...bksdaRoutes]);
+    server.route([...routes, ...artikelRoutes, ...predictRoutes, ...similiarRoutes,...mapsRoutes,...galeriRoutes, ...bksdaRoutes, ...authRoutes]);
 
     await server.start();
     console.log(`Server berjalan di ${server.info.uri}`);

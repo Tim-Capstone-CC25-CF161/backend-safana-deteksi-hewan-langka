@@ -70,6 +70,101 @@ const getGaleriHandler = async (request, h) => {
     }
 };
 
+const getHistoriesHandler = async (request, h) => {
+    try {
+        // Ambil adminId dari params
+        const { id: adminId } = request.params; // Mengganti nama 'id' menjadi 'adminId' agar lebih jelas
+
+        // Validasi adminId
+        if (!adminId) {
+            return h.response({
+                status: 'fail',
+                message: 'Admin ID is required'
+            }).code(400);
+        }
+
+        const page = parseInt(request.query.page) || 1;
+        const per_page = parseInt(request.query.per_page) || 5;
+        const offset = (page - 1) * per_page;
+        const search_name = request.query.search_name || '';
+
+        let whereClause = `WHERE dh.user_id = ?`; // Filter utama berdasarkan adminId
+        let queryParams = [adminId]; // Parameter pertama adalah adminId
+
+        if (search_name) {
+            whereClause += ` AND hd.nama LIKE ?`; // Tambahkan kondisi search_name
+            queryParams.push(`%${search_name}%`);
+        }
+
+        // --- 1. Query untuk menghitung total data ---
+        const [countRows] = await pool.query(`
+            SELECT COUNT(*) AS total
+            FROM detection_histories dh
+            JOIN hewandilindungi hd ON dh.hewan_id = hd.id
+            JOIN provinsi p ON dh.province_code = p.kode
+            JOIN admin a ON dh.user_id = a.id
+            ${whereClause}
+        `, queryParams);
+        const total_data = countRows[0].total;
+        const total_pages = Math.ceil(total_data / per_page);
+
+        // --- 2. Query untuk mengambil data utama ---
+        const [dataRows] = await pool.query(`
+            SELECT
+                dh.*,                 -- Semua kolom dari detection_histories
+                hd.id AS hewan_id,
+                hd.nama AS nama_hewan,
+                hd.namaLatin,         -- Menggunakan 'namaLatin' sesuai skema
+                hd.populasi,          -- Menambahkan 'populasi' sesuai skema
+                hd.endangeredStatus,  -- Menambahkan 'endangeredStatus' sesuai skema
+                -- hd.gambar,         -- Dihapus karena tidak ada di skema hewandilindungi
+                -- hd.status,         -- Dihapus karena tidak ada di skema hewandilindungi
+                -- hd.habitat,        -- Dihapus karena tidak ada di skema hewandilindungi
+                -- hd.deskripsi,      -- Dihapus karena tidak ada di skema hewandilindungi
+                p.nama AS nama_provinsi,
+                p.kode AS kode_provinsi,
+                a.name AS admin_name,
+                a.username AS admin_username
+            FROM detection_histories dh
+            JOIN hewandilindungi hd ON dh.hewan_id = hd.id
+            JOIN provinsi p ON dh.province_code = p.kode
+            JOIN admin a ON dh.user_id = a.id
+            ${whereClause}
+            ORDER BY dh.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [...queryParams, per_page, offset]);
+
+        // Format data agar latitude dan longitude menjadi angka
+        const formattedData = dataRows.map(row => ({
+            ...row,
+            latitude: parseFloat(row.latitude),
+            longitude: parseFloat(row.longitude)
+        }));
+
+        // --- 3. Kembalikan response dalam format yang diinginkan ---
+        return h.response({
+            status: 'success',
+            message: `Get detection histories for admin ID ${adminId} successfully`,
+            data: {
+                data: formattedData,
+                page: page,
+                total_pages: total_pages,
+                total_data: total_data,
+                per_page: per_page
+            }
+        }).code(200);
+
+    } catch (error) {
+        console.error('Error fetching detection histories:', error);
+        return h.response({
+            status: 'error',
+            message: 'Internal Server Error',
+            details: error.message
+        }).code(500);
+    }
+};
+
 module.exports = {
-    getGaleriHandler
+    getGaleriHandler,
+    getHistoriesHandler
 };
